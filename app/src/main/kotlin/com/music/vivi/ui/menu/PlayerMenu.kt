@@ -62,6 +62,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material3.Slider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,6 +100,16 @@ import kotlinx.coroutines.launch
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.round
+import com.music.vivi.ui.screens.CommentSheet
+import com.music.vivi.constants.ShowCommentButtonKey
+import com.music.vivi.utils.makeTimeString
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.res.pluralStringResource
+import com.music.vivi.ui.component.ActionPromptDialog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlin.math.roundToInt
+import androidx.compose.material3.OutlinedButton
 
 @Composable
 fun PlayerMenu(
@@ -152,6 +163,41 @@ fun PlayerMenu(
     val isListenTogetherGuest = listenTogetherRoleState?.value == com.music.vivi.listentogether.RoomRole.GUEST
     val pendingSuggestions by listenTogetherManager?.pendingSuggestions?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
 
+    val sleepTimerEnabled = remember(
+        playerConnection.service.sleepTimer.triggerTime,
+        playerConnection.service.sleepTimer.pauseWhenSongEnd
+    ) {
+        playerConnection.service.sleepTimer.isActive
+    }
+    var sleepTimerTimeLeft by remember { mutableLongStateOf(0L) }
+    var showSleepTimerDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var sleepTimerValue by rememberSaveable {
+        mutableFloatStateOf(30f)
+    }
+
+    LaunchedEffect(sleepTimerEnabled) {
+        if (sleepTimerEnabled) {
+            while (isActive) {
+                sleepTimerTimeLeft = if (playerConnection.service.sleepTimer.pauseWhenSongEnd) {
+                    playerConnection.player.duration - playerConnection.player.currentPosition
+                } else {
+                    playerConnection.service.sleepTimer.triggerTime - System.currentTimeMillis()
+                }
+                delay(1000L)
+            }
+        }
+    }
+
+    val (showCommentButton) = rememberPreference(
+        ShowCommentButtonKey,
+        defaultValue = true
+    )
+    var showCommentSheet by rememberSaveable {
+        mutableStateOf(false)
+    }
+
     AddToPlaylistDialog(
         isVisible = showChoosePlaylistDialog,
         onGetSong = { playlist ->
@@ -173,6 +219,75 @@ fun PlayerMenu(
         mediaMetadata = mediaMetadata,
         onDismiss = { showListenTogetherDialog = false }
     )
+
+    if (showSleepTimerDialog) {
+        ActionPromptDialog(
+            titleBar = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.sleep_timer),
+                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                }
+            },
+            onDismiss = { showSleepTimerDialog = false },
+            onConfirm = {
+                showSleepTimerDialog = false
+                playerConnection.service.sleepTimer.start(sleepTimerValue.roundToInt())
+            },
+            onCancel = {
+                showSleepTimerDialog = false
+            },
+            onReset = {
+                sleepTimerValue = 30f // Default value
+            },
+            content = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.minute,
+                            sleepTimerValue.roundToInt(),
+                            sleepTimerValue.roundToInt()
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Slider(
+                        value = sleepTimerValue,
+                        onValueChange = { sleepTimerValue = it },
+                        valueRange = 5f..120f,
+                        steps = (120 - 5) / 5 - 1,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            showSleepTimerDialog = false
+                            playerConnection.service.sleepTimer.start(-1)
+                        }
+                    ) {
+                        Text(stringResource(R.string.end_of_song))
+                    }
+                }
+            }
+        )
+    }
+
+    if (showCommentSheet) {
+        CommentSheet(
+            videoId = mediaMetadata.id,
+            onDismiss = { showCommentSheet = false }
+        )
+    }
 
     var showSelectArtistDialog by rememberSaveable {
         mutableStateOf(false)
@@ -460,6 +575,26 @@ fun PlayerMenu(
                             }
                         )
                     )
+
+
+
+                    if (showCommentButton) {
+                        add(
+                            Material3MenuItemData(
+                                title = { Text(text = stringResource(R.string.comments)) },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.chat_msg),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showCommentSheet = true
+                                }
+                            )
+                        )
+                    }
                 }
             )
         }
@@ -669,6 +804,35 @@ fun PlayerMenu(
                             )
                         )
                     }
+
+                    add(
+                        Material3MenuItemData(
+                            title = { Text(text = stringResource(R.string.sleep_timer)) },
+                            description = {
+                                Text(
+                                    text = if (sleepTimerEnabled)
+                                        makeTimeString(sleepTimerTimeLeft.coerceAtLeast(0))
+                                    else
+                                        stringResource(R.string.sleep_timer)
+                                )
+                            },
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.bedtime),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            },
+                            onClick = {
+                                if (sleepTimerEnabled) {
+                                    playerConnection.service.sleepTimer.clear()
+                                    onDismiss()
+                                } else {
+                                    showSleepTimerDialog = true
+                                }
+                            }
+                        )
+                    )
                 }
             )
         }
