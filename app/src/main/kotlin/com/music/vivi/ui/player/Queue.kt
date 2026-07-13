@@ -121,6 +121,7 @@ import com.music.vivi.constants.PlayerBackgroundStyle
 import com.music.vivi.constants.QueueEditLockKey
 import com.music.vivi.constants.ShowCommentButtonKey
 import com.music.vivi.constants.UseNewPlayerDesignKey
+import com.music.vivi.constants.PlayerFullscreenEnhancedKey
 import com.music.vivi.extensions.metadata
 import com.music.vivi.extensions.move
 import com.music.vivi.extensions.toggleRepeatMode
@@ -287,6 +288,10 @@ fun Queue(
     val (showCommentButton) = rememberPreference(
         ShowCommentButtonKey,
         defaultValue = true
+    )
+    val (playerFullscreenEnhanced) = rememberPreference(
+        PlayerFullscreenEnhancedKey,
+        defaultValue = false
     )
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -734,6 +739,9 @@ fun Queue(
                             .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
                     ),
             ) {
+                if (playerFullscreenEnhanced) {
+                    Spacer(Modifier.height(50.dp))
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
